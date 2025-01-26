@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "proto.h"
+#include "allocator.h"
 
 void send_disconnect(int fd) {
     u8 buf[4096] = {0};
@@ -46,10 +47,14 @@ void send_data(int fd) {
 }
 
 int main(int argc, char* argv[]) {
+    u32 n_blocks = 5;
+    u32 block_size = MAX_FRAME_SIZE;
+    Arena arena = Arena_init(n_blocks, block_size);
+
     struct sockaddr_in server_info = {0};
 
     server_info.sin_family = AF_INET;
-    server_info.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_info.sin_addr.s_addr = inet_addr(ADDR);
     server_info.sin_port = htons(PORT);
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -64,9 +69,9 @@ int main(int argc, char* argv[]) {
         close(fd);
         return EXIT_FAILURE;
     }
-    frame_t* frame = recv_frame(fd);
-    if (frame == NULL) {
-        printf("Got NULL frame.\n");
+
+    frame_t* frame = Arena_alloc(&arena);
+    if(recv_frame(fd, frame)) {
         return EXIT_FAILURE;
     }
     switch (frame->header.type) {
@@ -82,10 +87,12 @@ int main(int argc, char* argv[]) {
     }
     for (int i = 0; i < 50; ++i) {
         send_data(fd);
-        sleep(1);
+        usleep(10000);
     }
     send_disconnect(fd);
-    free(frame);
+
+    // Clean-up
     close(fd);
+    Arena_free(&arena);
     return EXIT_SUCCESS;
 }

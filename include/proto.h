@@ -1,17 +1,18 @@
 #ifndef PROTO_H
 #define PROTO_H
 
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
-#include <stdio.h>
-#include <unistd.h>
 #include <netinet/in.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 /* Maintain a strict maximum packet size */
 #define MAX_FRAME_SIZE 4096
+#define ADDR "127.0.0.1"
 #define PORT 6969
 
 typedef int8_t i8;
@@ -51,29 +52,28 @@ typedef struct {
 } frame_t;
 
 /* Read a frame from the socket */
-frame_t* recv_frame(int fd) {
+int recv_frame(int fd, frame_t* frameOut) {
     u8 buf[MAX_FRAME_SIZE] = {0};
-    frame_hdr_t *header = (frame_hdr_t*)&buf[0];
+    frame_hdr_t* header = (frame_hdr_t*)&buf[0];
     ssize_t bytes = read(fd, buf, sizeof(buf));
     if (bytes == -1) {
         perror("read");
-        return NULL;
+        return EXIT_FAILURE;
     }
     printf("Bytes read: %li\n", bytes);
     if (bytes > MAX_FRAME_SIZE) {
         printf("Frame too large!");
-        return NULL;
+        return EXIT_FAILURE;
     }
 
-    frame_t* frame = (frame_t*)malloc(sizeof(frame_t));
-    if (frame == NULL) return NULL;
-    frame->header.type = (frame_type_e)ntohl(header->type);
-    frame->header.data_len = ntohs(header->data_len);
-    frame->header.version = ntohs(header->version);
-    frame->data = (u8*)malloc(frame->header.data_len);
-    memcpy(frame->data, &buf[sizeof(frame_hdr_t)], frame->header.data_len);
+    if (frameOut == NULL) return EXIT_FAILURE;
+    frameOut->header.type = (frame_type_e)ntohl(header->type);
+    frameOut->header.data_len = ntohs(header->data_len);
+    frameOut->header.version = ntohs(header->version);
+    memcpy(
+        frameOut->data, &buf[sizeof(frame_hdr_t)], frameOut->header.data_len);
 
-    return frame;
+    return EXIT_SUCCESS;
 }
 
 /* Write a frame to the socket */
@@ -85,14 +85,15 @@ i64 send_frame(int fd, frame_t* frame) {
         return EXIT_FAILURE;
     }
 
-    u8* buf = (u8*)malloc(bytes);
-    frame_hdr_t *hdr = (frame_hdr_t*)&buf[0];
+    u8 buf[MAX_FRAME_SIZE] = {0};
+    frame_hdr_t* hdr = (frame_hdr_t*)&buf[0];
     hdr->type = (frame_type_e)htonl(frame->header.type);
     hdr->data_len = htons(frame->header.data_len);
     hdr->version = htons(frame->header.version);
     memcpy(&buf[sizeof(frame_hdr_t)], frame->data, frame->header.data_len);
 
-    i64 bytes_written = write(fd, buf, bytes);
+    i64 bytes_written =
+        write(fd, &buf, sizeof(frame_hdr_t) + frame->header.data_len);
     if (bytes_written == -1) {
         perror("write");
     }
